@@ -2,14 +2,17 @@ const express = require("express");
 const multer = require("multer");
 const mergeController = require("../controllers/mergeController");
 const fs = require("fs");
+
 const path = require("path");
+const AWS = require("aws-sdk");
+const s3 = new AWS.S3();
 
 const router = express.Router();
 const storage = multer.memoryStorage();
 const BASE_DOWNLOAD_URL =
   process.env.NODE_ENV === "production"
-    ? "https://your-production-domain.com" // Replace with your actual production domain
-    : "http://localhost:4000"; // Local development URL
+    ? "https://kind-erin-dugong-sock.cyclic.cloud/" // Replace with your actual production domain
+    : "http://localhost:5000"; // Local development URL
 const upload = multer({ storage: storage });
 
 const OUTPUT_PATH = path.join(__dirname, "../../public/merged.pdf");
@@ -18,6 +21,15 @@ router.post("/merge", upload.array("pdfFiles", 10), async (req, res) => {
   try {
     const mergedPdfBytes = await mergeController.mergePDFs(req.files);
     fs.writeFileSync(OUTPUT_PATH, mergedPdfBytes);
+
+    await s3
+      .putObject({
+        Body: mergedPdfBytes,
+        Bucket: "cyclic-kind-erin-dugong-sock-us-west-1",
+        Key: "merged.pdf",
+      })
+      .promise();
+
     const downloadUrl = `${BASE_DOWNLOAD_URL}/mergepdf/download`;
     console.log("downLoadurl", downloadUrl);
     res.status(200).send(downloadUrl);
@@ -28,8 +40,15 @@ router.post("/merge", upload.array("pdfFiles", 10), async (req, res) => {
   }
 });
 
-router.get("/download", (req, res) => {
-  res.download(OUTPUT_PATH, "merged.pdf"); // Provide download link
+router.get("/download", async (req, res) => {
+  let my_file = await s3
+    .getObject({
+      Bucket: "cyclic-kind-erin-dugong-sock-us-west-1",
+      Key: "merged.pdf",
+    })
+    .promise();
+
+  res.download(my_file, "merged.pdf"); // Provide download link
 });
 
 module.exports = router;
